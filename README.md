@@ -1,6 +1,6 @@
 # NEMO4.2_P6Z
 
-PISCES QUOTA P6Z includes explicit diazotrophy for the standard P5Z PISCES QUOTA framework
+PISCES QUOTA P6Z includes explicit diazotrophy for the standard P5Z PISCES QUOTA framework in NEMO4.2
 
 Able to switch between two prevalent marine diazotrophs, Trichodesmium and Crocosphaera
 
