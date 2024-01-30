@@ -1,0 +1,225 @@
+#!/bin/bash -l  
+# Use the current working directory
+#SBATCH -D ./
+# Use the current environment for this job.
+#SBATCH --export=ALL
+# Define job name
+#SBATCH -J P6Z_nemo42
+# Define a standard output file. When the job is running, %u will be replaced by user name,
+# %N will be replaced by the name of the node that runs the batch script, and %j will be replaced by job id number.
+#SBATCH -o nemo.%u.%N.%j.out
+# Define a standard error file
+#SBATCH -e nemo.%u.%N.%j.err
+# Request the partition
+#SBATCH -p nodes
+# Request the number of nodes
+#SBATCH -N 2
+# Request the total number of cores
+#SBATCH -n 80 
+# This asks for 0 days, 8 hour, 0 minutes and 0 seconds of time.
+#SBATCH -t 2-23:59:59
+# Specify memory per core
+#SBATCH --mem-per-cpu=9000M
+#
+#
+# define some information about the job
+ulimit -s unlimited
+export NPROC=80
+export XPROC=0
+let RUNPROC=$NPROC-$XPROC
+export ENAM=P6Z_nemo42
+export YEAR=1100
+export CONT=1
+export ENDYR=1200
+export STYR=${YEAR}
+export BIN="/users/lwrig/RUNS/NEMO4.2/${ENAM}"
+export XBIN=" /mnt/data1/users/software/NEMOPAR/xios-trunk-gcc/xios-trunk-r2330"
+export OUTDIR="/mnt/data1/users/lwrig/NEMO_OUT/NEMO4.2/${ENAM}"
+#export RUNDIR="/mnt/data2/users/nemo/RUNDIR_4.2.0/ORCA2_OFF_PISCES_v4.2.0a"
+export RUNDIR="/mnt/data2/users/nemo/RUNDIR_4.2.0_new"
+export RBLD="/users/lwrig/nemo_4.2.oa/tools/REBUILD"
+export RUN="${OUTDIR}/OUT"
+#export RUN="/mnt/lustre/users/atagliab/${ENAM}"
+echo =========================================================
+echo Job submitted date = `date`
+date_start=`date +%s`
+
+hostname
+
+echo "Print the following environmetal variables:"
+echo "Job name                     : $SLURM_JOB_NAME"
+echo "Job ID                       : $SLURM_JOB_ID"
+echo "Job user                     : $SLURM_JOB_USER"
+echo "Job array index              : $SLURM_ARRAY_TASK_ID"
+echo "Submit directory             : $SLURM_SUBMIT_DIR"
+echo "Temporary directory          : $TMPDIR"
+echo "Submit host                  : $SLURM_SUBMIT_HOST"
+echo "Queue/Partition name         : $SLURM_JOB_PARTITION"
+echo "Node list                    : $SLURM_JOB_NODELIST"
+echo "Hostname of 1st node         : $HOSTNAME"
+echo "Number of nodes allocated    : $SLURM_JOB_NUM_NODES or $SLURM_NNODES"
+echo "Number of processes          : $SLURM_NTASKS"
+echo "Number of processes per node : $SLURM_TASKS_PER_NODE"
+echo "Requested tasks per node     : $SLURM_NTASKS_PER_NODE"
+echo "Requested CPUs per task      : $SLURM_CPUS_PER_TASK"
+echo "Scheduling priority          : $SLURM_PRIO_PROCESS"
+
+cd ${RUN}
+
+echo 'In directory: ' $RUN
+
+if [ $CONT -eq 1 ]; then
+# check if there is a more recent year that has already been written
+cd ${OUTDIR}
+restfile=`ls -t ${ENAM}_restart_Y*.nc | head -1`
+suffix="${restfile##*[0-9]}"
+number="${restfile%"$suffix"}"
+number="${number##*[!-0-9]}"
+
+if [ $YEAR -eq $number ]; then
+  echo "Beginning from first year $YEAR"
+else
+  export YEAR=$number
+  echo "Re-initialising from newer restart file '${restfile}' at year $YEAR"
+fi
+cd ${RUN}
+else
+echo "Beginning new fresh new run"
+fi
+
+# below here is specific for each year:
+while [ ${YEAR} -le ${ENDYR} ] ; do
+export NEXT=`expr $YEAR + 1`
+echo 'YEAR='
+echo $YEAR
+echo 'NEXT='
+echo $NEXT
+
+#source /users/atagliab/xios-2.5s/arch/arch-GCC_BARKLAs.env
+source  /mnt/data1/users/software/NEMOPAR/xios-trunk-gcc/xios-trunk-r2330/arch/arch-GCC_BARKLA.env
+# clean rundir:
+rm -rf ${RUN}/*
+#
+cp ${BIN}/nemo.exe nemo.exe
+cp ${BIN}/namelist_pisces_ref_p6z namelist_pisces_ref
+cp ${BIN}/namelist_pisces_cfg_p6z namelist_pisces_cfg
+cp ${BIN}/namelist_cfg namelist_cfg
+cp ${BIN}/namelist_ref .
+cp ${BIN}/namelist_top_ref .
+#if [[ ${YEAR} -eq 1000 ]];then
+#cp ${BIN}/namelist_top_cfg.quo.lgw.norst namelist_top_cfg
+#else
+cp ${BIN}/namelist_top_cfg_p6z namelist_top_cfg
+#fi
+#if (( $YEAR % 10 == 0 )) ;then
+if [[ ${YEAR} -eq ${ENDYR} ]];then
+cp ${BIN}/file_def_nemo-pisces.xml.p6z file_def_nemo-pisces.xml
+else
+cp ${BIN}/file_def_nemo_EMPTY.xml  file_def_nemo-pisces.xml
+fi
+cp ${BIN}/axis_def_nemo.xml axis_def_nemo.xml
+cp ${BIN}/domain_def_nemo.xml domain_def_nemo.xml
+cp ${BIN}/context_nemo.xml context_nemo.xml
+cp ${BIN}/field_def_nemo-oce.xml field_def_nemo-oce.xml
+cp ${BIN}/field_def_nemo-pisces.xml.p6z field_def_nemo-pisces.xml
+cp ${BIN}/grid_def_nemo.xml grid_def_nemo.xml
+cp ${BIN}/iodef.xml iodef.xml
+ln -sf ${RUNDIR}/* .
+cp ${RUNDIR}/co2-in-air.txt .
+
+# can hardcode other ones here if ndeeded:
+#
+#
+# now copy restart
+# multi proc restart
+#typeset -Z4 i=0
+#COUNTER=0
+#while [  $COUNTER -le ${NPROC} ]; do
+#    i=`printf "%04d" $COUNTER`
+#cp ${OUTDIR}/${ENAM}_restart_P${i}_Y${YEAR}.nc restart_trc_${i}.nc
+#    let COUNTER=COUNTER+1
+#end of processor loop
+#done
+#
+# mono restart
+#
+ln -sf ${OUTDIR}/${ENAM}_restart_Y${YEAR}.nc restart_trc.nc
+# check situatio of rundir
+ls -lrt
+#######################################
+# run model
+export OMP_NUM_THREADS=1
+time mpirun -np $RUNPROC ./nemo.exe
+# run done
+# check if the run was successful (if not, then exit and don't waste my time)
+MESSAGE=`tail -40 ocean.output | grep NaN`
+
+if [[ -z $MESSAGE ]]; then
+  echo " YEAR $YEAR terminated normally "
+else
+  echo " E R R O R "
+  echo " Abnormal run "
+  echo " NaNs in the final statistics of tracers "
+  exit
+fi
+cd ${RUN}
+ls -lrt
+#source /users/atagliab/xios-2.5s/arch/arch-GCC_BARKLAs.env
+source  /mnt/data1/users/software/NEMOPAR/xios-trunk-gcc/xios-trunk-r2330/arch/arch-GCC_BARKLA.env
+# copy restart
+#./rebuild_nemo PISCES_00001460_restart.trc $RUNPROC
+#${RBLD}/rebuild PISCES_00001460_restart.trc_00??.nc 
+#mv rebuilt_file.nc ${OUTDIR}/${ENAM}_restart_Y${NEXT}.nc
+# save output:
+${RBLD}/rebuild PISCES_1y_00000101_00001231_ptrc_T_0???.nc
+mv rebuilt_file.nc ${OUTDIR}/${ENAM}_1y_ptrc_Y${YEAR}.nc
+
+${RBLD}/rebuild PISCES_1m_00000101_00001231_ptrc_T_0???.nc
+mv rebuilt_file.nc  ${OUTDIR}/${ENAM}_1m_ptrc_Y${YEAR}.nc
+
+${RBLD}/rebuild PISCES_1m_00000101_00001231_diad_T_0???.nc
+mv rebuilt_file.nc ${OUTDIR}/${ENAM}_1m_diad_Y${YEAR}.nc
+
+${RBLD}/rebuild PISCES_1y_00000101_00001231_diad_T_0???.nc
+mv rebuilt_file.nc ${OUTDIR}/${ENAM}_1y_diad_Y${YEAR}.nc
+
+mv PISCES_1d_00000101_00001231_bioscalar_0000.nc ${OUTDIR}/${ENAM}_1d_bioscaler_Y${YEAR}.nc
+mv PISCES_1y_00000101_00001231_bioscalar_0000.nc ${OUTDIR}/${ENAM}_1y_bioscaler_Y${YEAR}.nc
+#
+tar -cf ${ENAM}_namelists_Y${YEAR}.tar output.namelist*
+mv ${ENAM}_namelists_Y${YEAR}.tar ${OUTDIR}/.
+COUNTER=0
+#while [  $COUNTER -lt $NPROC ]; do
+#    i=`printf "%04d" $COUNTER`
+#mv  PISCES_1m_*_ptrc_T_${i}.nc ${OUTDIR}/${ENAM}_1m_ptrc_P${i}_Y${YEAR}.nc
+#mv  PISCES_1m_*_diad_T_${i}.nc ${OUTDIR}/${ENAM}_1m_diad_P${i}_Y${YEAR}.nc
+#mv  PISCES_1y_*_ptrc_T_${i}.nc ${OUTDIR}/${ENAM}_1y_ptrc_P${i}_Y${YEAR}.nc
+#mv  PISCES_1y_*_diad_T_${i}.nc ${OUTDIR}/${ENAM}_1y_diad_P${i}_Y${YEAR}.nc
+#mv  PISCES_5d_*_ptrc_T_${i}.nc ${OUTDIR}/${ENAM}_5d_ptrc_P${i}_Y${YEAR}.nc
+#mv  PISCES_5d_*_diad_T_${i}.nc ${OUTDIR}/${ENAM}_5d_diad_P${i}_Y${YEAR}.nc
+#mv  PISCES_1d_*_ptrc_T_${i}.nc ${OUTDIR}/${ENAM}_1d_ptrc_P${i}_Y${YEAR}.nc
+#mv  PISCES_1d_*_diad_T_${i}.nc ${OUTDIR}/${ENAM}_1d_diad_P${i}_Y${YEAR}.nc
+#mv  PISCES_*_restart.trc_${i}.nc ${OUTDIR}/${ENAM}_restart_P${i}_Y${NEXT}.nc
+#    let COUNTER=COUNTER+1
+#done
+#
+cd ${RUN}
+cp ocean.output ${OUTDIR}/${ENAM}_ocean_output_Y${YEAR}
+cp co2atm.txt ${OUTDIR}/${ENAM}_co2atm_Y${YEAR}.txt
+
+# copy restart
+#./rebuild_nemo PISCES_00001460_restart.trc $RUNPROC
+${RBLD}/rebuild PISCES_00001460_restart.trc_00??.nc
+mv rebuilt_file.nc ${OUTDIR}/${ENAM}_restart_Y${NEXT}.nc
+
+#end of that particular year
+#increment year
+export YEAR=$NEXT
+#  YEAR=$(( $YEAR + 1 ))
+cd ${RUN}
+# year loop
+echo Job finished date = `date`
+done
+# create next year script
+#  sed s/"export YEAR=3001"/"export YEAR=$ENDYR"/g ${ENAM}.$STYR > ${ENAM}.${ENDYR}a
+#  sed s/"export ENDYR=3051"/"export ENDYR=$NEWEND"/g ${ENAM}.${ENDYR}a > ${ENAM}.${ENDYR}
